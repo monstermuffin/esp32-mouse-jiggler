@@ -10,7 +10,6 @@
 #define JIGGLE_MIN_DISTANCE 5
 #define JIGGLE_MAX_DISTANCE 20
 #define INTERVAL_LIST { 30, 90, 180, 300, 600, 900 }
-#define NUM_INTERVALS 6
 #define DEFAULT_INTERVAL 2
 
 // Display Configs
@@ -71,12 +70,16 @@ unsigned long lastDebounceTimeDown = 0;
 unsigned long lastJiggle;
 unsigned long lastDisplayUpdate = 0;
 bool running = true;
+bool connected = false;
+bool newConnectState = false;
 bool dirty = true;
 int nextJiggleDiff;
-int intervals[NUM_INTERVALS] = INTERVAL_LIST;
+int intervals[] = INTERVAL_LIST;
+size_t numIntervals = sizeof(intervals) / sizeof(intervals[0]);
 int current_interval = DEFAULT_INTERVAL;
 int jiggle_interval = intervals[current_interval] * 1000;
-char animation[4] = { '-', '\\', '|', '/' };
+char animation[] = { '-', '\\', '|', '/' };
+size_t numAnimations = sizeof(animation) / sizeof(animation[0]);
 int8_t i_animation = 0;
 
 void setup()
@@ -112,7 +115,8 @@ void loop()
 {
     now = millis();
 
-    if (running && now - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL) {
+    if (connected && running && now - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL)
+    {
         dirty = true;
     }
 
@@ -128,9 +132,17 @@ void loop()
     {
         Serial.println("pressed_down");
         dirty = true;
-        current_interval = (current_interval + 1) % NUM_INTERVALS;
+        current_interval = (current_interval + 1) % numIntervals;
         jiggle_interval = intervals[current_interval] * 1000;
         lastJiggle = now;
+    }
+
+    newConnectState = bleMouse.isConnected();
+    if (newConnectState != connected)
+    {
+        connected = newConnectState;
+        jiggle_interval = intervals[current_interval] * 1000;
+        dirty = true;
     }
 
     nextJiggleDiff = jiggle_interval - (now - lastJiggle);
@@ -139,21 +151,22 @@ void loop()
     {
         display.clearDisplay();
         display.setCursor(2, 0);
-        display.print(F(running ? "Jiggling..." : "Standby"));
+        display.print(F(connected ? (running ? "Jiggling..." : "Standby") : "Not connected"));
 
-        if (running) {
+        if (connected && running)
+        {
             display.setCursor(120, 0);
-            i_animation = (i_animation + 1) % sizeof(animation);
+            i_animation = (i_animation + 1) % numAnimations;
             display.print(animation[i_animation]);
 
             display.setCursor(2, 11);
-            char s [126];
+            char s [22];
             sprintf (s, "Next in %ds", nextJiggleDiff / 1000);
             display.print(F(s));
         }
 
         display.setCursor(2, 22);
-        char s [126];
+        char s [22];
         sprintf (s, "Interval: %ds", intervals[current_interval]);
         display.print(F(s));
 
@@ -163,7 +176,8 @@ void loop()
         lastDisplayUpdate = now;
     }
 
-    if (running && nextJiggleDiff <= 0) {
+    if (connected && running && nextJiggleDiff <= 0)
+    {
         lastJiggle = now;
         moveMouse();
     }
