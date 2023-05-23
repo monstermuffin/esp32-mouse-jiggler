@@ -2,6 +2,7 @@
 #include <BleMouse.h>
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
+#include <Preferences.h>
 
 // Bluetooth Configs
 #define X_RANDOM_RANGE 3
@@ -29,6 +30,9 @@ BleMouse bleMouse("Bluetooth Mouse 4.2", "Important Technologies", 42);
 
 // Initialize Display
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Initialize preferences from flash
+Preferences preferences;
 
 // --> Functions
 
@@ -76,8 +80,8 @@ bool dirty = true;
 int nextJiggleDiff;
 int intervals[] = INTERVAL_LIST;
 size_t numIntervals = sizeof(intervals) / sizeof(intervals[0]);
-int current_interval = DEFAULT_INTERVAL;
-int jiggle_interval = intervals[current_interval] * 1000;
+int current_interval;
+int jiggle_interval;
 char animation[] = { '-', '\\', '|', '/' };
 size_t numAnimations = sizeof(animation) / sizeof(animation[0]);
 int8_t i_animation = 0;
@@ -88,6 +92,11 @@ void setup()
     Serial.begin(115200);
     Serial.println();
     Serial.println();
+
+    // Preferences
+    preferences.begin("app", false);
+    current_interval = preferences.getShort("intv", DEFAULT_INTERVAL);
+    jiggle_interval = intervals[current_interval] * 1000;
 
     // Button pins
     pinMode(BUTTON_UP, INPUT_PULLUP);
@@ -135,6 +144,7 @@ void loop()
         current_interval = (current_interval + 1) % numIntervals;
         jiggle_interval = intervals[current_interval] * 1000;
         lastJiggle = now;
+        preferences.putShort("intv", current_interval);
     }
 
     newConnectState = bleMouse.isConnected();
@@ -143,6 +153,12 @@ void loop()
         connected = newConnectState;
         jiggle_interval = intervals[current_interval] * 1000;
         dirty = true;
+
+        if (!connected)
+        {
+            // TODO: solve issues with restarting BleMouse
+            ESP.restart();
+        }
     }
 
     nextJiggleDiff = jiggle_interval - (now - lastJiggle);
