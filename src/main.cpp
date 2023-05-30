@@ -152,6 +152,7 @@ void setup()
     preferences.begin("app", false);
     current_interval = preferences.getShort("intv", DEFAULT_INTERVAL);
     jiggle_interval = intervals[current_interval] * 1000;
+    running = preferences.getBool("isrunning", true);
 
     // mac address
     // https://generate.plus/en/address/mac
@@ -199,6 +200,8 @@ void loop()
         running = !running;
         dirty = true;
         lastJiggle = now;
+
+        preferences.putBool("isrunning", running);
     }
     else if (buttonResult == BUTTON_LONGPRESS)
     {
