@@ -23,7 +23,7 @@ ESP32 connects to a PC or mobile phone as a bluetooth mouse and jiggles every fe
 ## Parts
 
 - ESP32 NodeMCU
-- SSD1306 I2C OLED Display
+- SSD1306 I2C OLED Display (128x32 pixels)
 - 2x push button
 
 ## Setup
