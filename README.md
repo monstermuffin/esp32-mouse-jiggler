@@ -1,31 +1,36 @@
-# DroChill
-## ESP32 bluetooth mouse jiggler
+# ESP32 Bluetooth Mouse Jiggler
 
+ESP32 connects to a PC or mobile phone as a bluetooth mouse and jiggles every few seconds to keep the screen alive.
 
-![N|ESP32](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRxBzNca25vVHpixpe43H1G64hQvBPdRDXByCEZrv8dkgpu5QUOVWH4v44LM2_hidzS2V8&usqp=CAU)
-
-Do you ever take a break from work and find that your computer has gone to sleep or locked itself due to inactivity, causing your boss to get pissed on you for not being online? 
-
-
-The DroChill is a tiny, undetectable ESP32 powered Bluetooth mouse jiggler that helps your Slack or Microsoft Teams to stay awake while you're chilling. 
-
+![demo](demo.gif)
 
 ## Features
 
+- OLED Display (status, countdown to next jiggle, configured interval, configured channel/MAC)
+- Start/Pause button (short press on upper button)
+- Jiggle Interval configurable by button (short press on lower button)
+- Use the jiggler on up to three devices (long press on lower button)
+- Saves current settings to flash
 - Undetectable
-- Moves your mouse every 1 minute and randomly performs a right mouse click
-- Prevents software like Slack or Microsoft Teams from setting you status to "away"
 - No setup required
 - Simple and reliable
 
+## Known limitations
+
+- If bluetooth connection is lost the ESP is restarted because the BLE library does not perform a proper re-init
+- Same for changing the bluetooth MAC address
 
 ## Setup
-- Clone the repo. 
+
+- Clone the repo.
 - Open the repo with VisualStudio Code with PlatformIO installed.
 - Press upload button and wait for upload to finish.
 - Power your board on
-- Connect to device called "DroChill mouse jiggler v1"
-- ✨You're awesome ✨
+- Connect to bluetooth device
+
+## Credits
+
+Original code by https://github.com/tornado67/DroChill
 
 ## License
 
