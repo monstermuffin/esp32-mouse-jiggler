@@ -20,6 +20,12 @@ ESP32 connects to a PC or mobile phone as a bluetooth mouse and jiggles every fe
 - If bluetooth connection is lost the ESP is restarted because the BLE library does not perform a proper re-init
 - Same for changing the bluetooth MAC address
 
+## Parts
+
+- ESP32 NodeMCU
+- SSD1306 I2C OLED Display
+- 2x push button
+
 ## Setup
 
 - Clone the repo.
