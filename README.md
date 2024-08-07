@@ -15,7 +15,7 @@ Undetectable. This *is* a mouse.
 #### Get the Project Files:
 Clone this repository:
 ```bash
-git clone https://github.com/monstermuffin/mouse-jiggler.git
+git clone https://github.com/monstermuffin/esp32-mouse-jiggler.git
 ```
 
 #### Configure the Project (if necessary):
