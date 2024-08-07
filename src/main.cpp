@@ -1,282 +1,188 @@
 #include <Arduino.h>
 #include <BleMouse.h>
-#include <Wire.h>
-#include <Adafruit_SSD1306.h>
-#include <Preferences.h>
 
-// Bluetooth Configs
-#define X_RANDOM_RANGE 3
-#define Y_RANDOM_RANGE 3
-#define JIGGLE_STEP_INTERVAL 50
-#define JIGGLE_MIN_DISTANCE 5
-#define JIGGLE_MAX_DISTANCE 20
-#define INTERVAL_LIST { 30, 90, 180, 300, 600, 900 }
-#define DEFAULT_INTERVAL 2
-#define NUM_CHANNELS 3
+#define DEVICE_NAME "Microsoft Ergonomic Mouse"
 
-// Display Configs
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
-#define OLED_RESET -1
-#define SCREEN_ADDRESS 0x3C
-#define DISPLAY_UPDATE_INTERVAL 500
+#define X_RANDOM_RANGE 5
+#define Y_RANDOM_RANGE 5
+#define MIN_MOVE_INTERVAL 5000    // 5 seconds
+#define MAX_MOVE_INTERVAL 30000   // 30 seconds
+#define MIN_CLICK_INTERVAL 10000  // 10 seconds
+#define MAX_CLICK_INTERVAL 60000  // 60 seconds
+#define DISCONNECT_TIMEOUT 10000  // 10 seconds
 
-// Button Configs
-#define BUTTON_UP 5
-#define BUTTON_DOWN 27
-#define DEBOUNCE_DELAY 250
-#define LONG_PRESS 1000
+#define BOOT_BUTTON 0  // GPIO0 is typically the BOOT button on most ESP32 boards
 
-// Types
-#define BUTTON_NONE 0
-#define BUTTON_PRESS 1
-#define BUTTON_LONGPRESS 2
+// Configuration variables
+bool enableMouseMovement = true;
+bool enableRightClick = false;
 
-struct ButtonState {
-    bool init;
-    u_int64_t pressed;
-    u_int64_t longpress;
-    u_int64_t released;
-};
+// LED configuration
+#define USE_LED true  // Set to false if your board doesn't have an LED or you don't want to use it
+#define LED_PIN 2     // Change this to match your board's LED pin, if different
 
-// Initialize Bluetooth
-BleMouse bleMouse("Bluetooth Mouse 4.2", "Important Technologies", 42);
+BleMouse bleMouse(DEVICE_NAME);
 
-// Initialize Display
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+unsigned long lastMoveTime = 0;
+unsigned long lastClickTime = 0;
+unsigned long moveInterval = 0;
+unsigned long clickInterval = 0;
+unsigned long lastConnectedTime = 0;
+unsigned long lastDebounceTime = 0;
+bool wasConnected = false;
+bool lastButtonState = HIGH;
+bool buttonState;
 
-// Initialize preferences from flash
-Preferences preferences;
+// Function prototypes
+void moveMouse();
+void rightClick();
+void checkConnectionAndReset();
+void checkButton();
+void updateLED();
+void printConfig();
+void wiggleMouse();
 
-// --> Functions
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Starting BLE Mouse Emulator");
 
-void moveMouse()
-{
-    int distance = random(JIGGLE_MIN_DISTANCE, JIGGLE_MAX_DISTANCE);
-    int x = random(X_RANDOM_RANGE) - 1;
-    int y = random(Y_RANDOM_RANGE) - 1;
+  pinMode(BOOT_BUTTON, INPUT_PULLUP);
 
-    for (int i = 0; i < distance; i++)
-    {
-        bleMouse.move(x, y);
-        delay(JIGGLE_STEP_INTERVAL);
-    }
+  if (USE_LED) {
+    pinMode(LED_PIN, OUTPUT);
+  }
 
-    for (int i = 0; i < distance; i++)
-    {
-        bleMouse.move(0 - x, 0 - y);
-        delay(JIGGLE_STEP_INTERVAL);
-    }
+  bleMouse.begin();
+
+  // Initialize random intervals
+  moveInterval = random(MIN_MOVE_INTERVAL, MAX_MOVE_INTERVAL);
+  clickInterval = random(MIN_CLICK_INTERVAL, MAX_CLICK_INTERVAL);
+
+  updateLED();
+  printConfig();
 }
 
-short buttonState(int pin, unsigned long now, ButtonState *buttonState)
-{
-    if (buttonState->init == false && digitalRead(pin) == HIGH)
-    {
-        // first unpressed state registered
-        buttonState->init = true;
+void loop() {
+  checkButton();
+
+  if (bleMouse.isConnected()) {
+    if (!wasConnected) {
+      Serial.println("BLE Mouse connected");
+      wasConnected = true;
+      wiggleMouse(); // Wiggle mouse on connection
     }
-    else if(buttonState->init == false)
-    {
-        // button was pressed before firmware started, ignore
-        return BUTTON_NONE;
+    lastConnectedTime = millis();
+
+    unsigned long currentTime = millis();
+
+    // Check if it's time to move the mouse
+    if (enableMouseMovement && currentTime - lastMoveTime >= moveInterval) {
+      moveMouse();
+      lastMoveTime = currentTime;
+      moveInterval = random(MIN_MOVE_INTERVAL, MAX_MOVE_INTERVAL);
     }
 
-    if (buttonState->pressed == 0 && digitalRead(pin) == LOW)
-    {
-        // button pressed
-        buttonState->pressed = millis();
+    // Check if it's time to right-click
+    if (enableRightClick && currentTime - lastClickTime >= clickInterval) {
+      rightClick();
+      lastClickTime = currentTime;
+      clickInterval = random(MIN_CLICK_INTERVAL, MAX_CLICK_INTERVAL);
     }
-    else if (buttonState->pressed > 0 && buttonState->released == 0 && buttonState->longpress == 0 && digitalRead(pin) == LOW)
-    {
-        // button still pressed
-        if (millis() - buttonState->pressed > LONG_PRESS)
-        {
-            // it was a long press
-            buttonState->longpress = millis();
-            return BUTTON_LONGPRESS;
-        }
-    }
-    else if (buttonState->pressed > 0 && buttonState->released == 0 && digitalRead(pin) == HIGH)
-    {
-        // button was released
-        buttonState->released = millis();
-        if (buttonState->longpress == 0)
-        {
-            // no longpress recorded, so it's a short press
-            return BUTTON_PRESS;
-        }
-    }
-    else if (buttonState->pressed > 0 && buttonState->released > 0 && millis() - buttonState->released > DEBOUNCE_DELAY)
-    {
-        // button released, debounce time expired
-        buttonState->pressed = 0;
-        buttonState->released = 0;
-        buttonState->longpress = 0;
-    }
-
-    return BUTTON_NONE;
+  } else {
+    checkConnectionAndReset();
+  }
 }
 
-// --> Logic
+void moveMouse() {
+  int x = random(-X_RANDOM_RANGE, X_RANDOM_RANGE + 1);
+  int y = random(-Y_RANDOM_RANGE, Y_RANDOM_RANGE + 1);
 
-unsigned short bluetoothChannelOffset = 0;
-unsigned long now = 0;
-ButtonState buttonStateTop;
-ButtonState buttonStateBottom;
-short buttonResult;
-unsigned long lastJiggle;
-unsigned long lastDisplayUpdate = 0;
-bool running = true;
-bool connected = false;
-bool newConnectState = false;
-bool dirty = true;
-int nextJiggleDiff;
-int intervals[] = INTERVAL_LIST;
-size_t numIntervals = sizeof(intervals) / sizeof(intervals[0]);
-int current_interval;
-int jiggle_interval;
-char animation[] = { '-', '\\', '|', '/' };
-size_t numAnimations = sizeof(animation) / sizeof(animation[0]);
-int8_t i_animation = 0;
-char s [22];
-
-void setup()
-{
-    // Serial
-    Serial.begin(115200);
-    Serial.println();
-    Serial.println();
-
-    // Preferences
-    preferences.begin("app", false);
-    current_interval = preferences.getShort("intv", DEFAULT_INTERVAL);
-    jiggle_interval = intervals[current_interval] * 1000;
-    running = preferences.getBool("isrunning", true);
-
-    // mac address
-    // https://generate.plus/en/address/mac
-    // Logitech Inc
-    bluetoothChannelOffset = preferences.getUShort("macoffset", 0);
-    uint8_t macoffset = 0xAE + bluetoothChannelOffset;
-    uint8_t new_mac[8] = { 0xEC, 0x81, 0x93, 0x37, macoffset, 0xCB };
-    esp_base_mac_addr_set(new_mac);
-
-    // Button pins
-    pinMode(BUTTON_UP, INPUT_PULLUP);
-    pinMode(BUTTON_DOWN, INPUT_PULLUP);
-
-    // Bluetooth
-    bleMouse.begin();
-
-    // Display
-    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-    {
-        Serial.println(F("SSD1306 allocation failed"));
-        for (;;); // Don't proceed, loop forever
-    }
-
-    display.setRotation(2);
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-
-    lastJiggle = millis();
+  bleMouse.move(x, y);
+  Serial.printf("Moved mouse: x=%d, y=%d\n", x, y);
 }
 
-void loop()
-{
-    now = millis();
+void rightClick() {
+  bleMouse.click(MOUSE_RIGHT);
+  Serial.println("Performed right-click");
+}
 
-    if (connected && running && now - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL)
-    {
-        dirty = true;
-    }
+void checkConnectionAndReset() {
+  if (wasConnected) {
+    Serial.println("BLE Mouse disconnected");
+    wasConnected = false;
+  }
 
-    buttonResult = buttonState(BUTTON_UP, now, &buttonStateTop);
-    if (buttonResult == BUTTON_PRESS)
-    {
-        Serial.println("shortpressed_top");
-        running = !running;
-        dirty = true;
-        lastJiggle = now;
+  if (millis() - lastConnectedTime > DISCONNECT_TIMEOUT) {
+    Serial.println("Connection timeout. Restarting ESP32...");
+    delay(1000);  // Short delay to allow serial message to be sent
+    ESP.restart();
+  } else {
+    Serial.println("Waiting for connection...");
+    delay(1000);  // Check connection status every second
+  }
+}
 
-        preferences.putBool("isrunning", running);
-    }
-    else if (buttonResult == BUTTON_LONGPRESS)
-    {
-        Serial.println("longpressed_top");
-    }
+void checkButton() {
+  int reading = digitalRead(BOOT_BUTTON);
 
-    buttonResult = buttonState(BUTTON_DOWN, now, &buttonStateBottom);
-    if (buttonResult == BUTTON_PRESS)
-    {
-        Serial.println("shortpressed_bottom");
-        dirty = true;
-        current_interval = (current_interval + 1) % numIntervals;
-        jiggle_interval = intervals[current_interval] * 1000;
-        lastJiggle = now;
-        preferences.putShort("intv", current_interval);
-    }
-    else if (buttonResult == BUTTON_LONGPRESS)
-    {
-        Serial.println("longpressed_bottom");
-        preferences.putUShort("macoffset", (preferences.getUShort("macoffset", 0) + 1) % NUM_CHANNELS);
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
 
-        // TODO: solve issues with restarting BleMouse
-        ESP.restart();
-    }
-
-    newConnectState = bleMouse.isConnected();
-    if (newConnectState != connected)
-    {
-        connected = newConnectState;
-        jiggle_interval = intervals[current_interval] * 1000;
-        dirty = true;
-
-        if (!connected)
-        {
-            // TODO: solve issues with restarting BleMouse
-            ESP.restart();
+  if ((millis() - lastDebounceTime) > 50) {
+    if (reading != buttonState) {
+      buttonState = reading;
+      if (buttonState == LOW) {
+        // Toggle each feature independently
+        enableMouseMovement = !enableMouseMovement;
+        enableRightClick = !enableRightClick;
+        updateLED();
+        printConfig();
+        if ((enableMouseMovement || enableRightClick) && bleMouse.isConnected()) {
+          wiggleMouse(); // Wiggle mouse when any feature is enabled
         }
+      }
     }
+  }
 
-    nextJiggleDiff = jiggle_interval - (now - lastJiggle);
+  lastButtonState = reading;
+}
 
-    if (dirty)
-    {
-        display.clearDisplay();
-        display.setCursor(2, 0);
-        display.print(F(connected ? (running ? "Jiggling..." : "Standby") : "Not connected"));
-
-        if (connected && running)
-        {
-            display.setCursor(120, 0);
-            i_animation = (i_animation + 1) % numAnimations;
-            display.print(animation[i_animation]);
-
-            display.setCursor(2, 11);
-            sprintf (s, "Next in %ds", nextJiggleDiff / 1000);
-            display.print(F(s));
-        }
-
-        display.setCursor(2, 22);
-        sprintf (s, "Intv: %ds", intervals[current_interval]);
-        display.print(F(s));
-
-        display.setCursor(96, 22);
-        sprintf (s, "Ch: %d", bluetoothChannelOffset);
-        display.print(F(s));
-
-        display.display();
-
-        dirty = false;
-        lastDisplayUpdate = now;
+void updateLED() {
+  if (USE_LED) {
+    if (enableMouseMovement || enableRightClick) {
+      digitalWrite(LED_PIN, HIGH);  // LED on when either feature is enabled
+    } else {
+      digitalWrite(LED_PIN, LOW);   // LED off when both features are disabled
     }
+  }
+}
 
-    if (connected && running && nextJiggleDiff <= 0)
-    {
-        lastJiggle = now;
-        moveMouse();
-    }
+void printConfig() {
+  Serial.println("Configuration:");
+  Serial.print("Mouse Movement: ");
+  Serial.println(enableMouseMovement ? "Enabled" : "Disabled");
+  Serial.print("Right Click: ");
+  Serial.println(enableRightClick ? "Enabled" : "Disabled");
+  Serial.print("LED State: ");
+  Serial.println((enableMouseMovement || enableRightClick) ? "ON" : "OFF");
+}
+
+
+void wiggleMouse() {
+  Serial.println("Performing wiggle");
+  int wiggleCount = random(3, 6);  // Random number of wiggle movements
+  int wiggleDelay = 50;
+
+  for (int i = 0; i < wiggleCount; i++) {
+    int x = random(-20, 21);  // Random x movement between -20 and 20
+    int y = random(-20, 21);  // Random y movement between -20 and 20
+
+    bleMouse.move(x, y);
+    delay(wiggleDelay);
+
+    // Move back, but not exactly to the original position
+    bleMouse.move(-x + random(-5, 6), -y + random(-5, 6));
+    delay(wiggleDelay);
+  }
 }
