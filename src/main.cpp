@@ -19,7 +19,7 @@ bool enableRightClick = false;
 
 // LED configuration
 #define USE_LED true  // Set to false if your board doesn't have an LED or you don't want to use it
-#define LED_PIN 2     // Change this to match your board's LED pin, if different
+#define LED_PIN 2     // Change this to match your board's LED pin, if different, usually 2 I think?
 
 BleMouse bleMouse(DEVICE_NAME);
 
@@ -133,13 +133,14 @@ void checkButton() {
     if (reading != buttonState) {
       buttonState = reading;
       if (buttonState == LOW) {
-        // Toggle each feature independently
-        enableMouseMovement = !enableMouseMovement;
-        enableRightClick = !enableRightClick;
+        // Toggle features on/off
+        bool newState = !(enableMouseMovement || enableRightClick);
+        enableMouseMovement = newState;
+        enableRightClick = newState;
         updateLED();
         printConfig();
-        if ((enableMouseMovement || enableRightClick) && bleMouse.isConnected()) {
-          wiggleMouse(); // Wiggle mouse when any feature is enabled
+        if (newState && bleMouse.isConnected()) {
+          wiggleMouse(); // Wiggle mouse when features are enabled
         }
       }
     }
@@ -150,11 +151,7 @@ void checkButton() {
 
 void updateLED() {
   if (USE_LED) {
-    if (enableMouseMovement || enableRightClick) {
-      digitalWrite(LED_PIN, HIGH);  // LED on when either feature is enabled
-    } else {
-      digitalWrite(LED_PIN, LOW);   // LED off when both features are disabled
-    }
+    digitalWrite(LED_PIN, (enableMouseMovement || enableRightClick) ? HIGH : LOW);
   }
 }
 
@@ -167,7 +164,6 @@ void printConfig() {
   Serial.print("LED State: ");
   Serial.println((enableMouseMovement || enableRightClick) ? "ON" : "OFF");
 }
-
 
 void wiggleMouse() {
   Serial.println("Performing wiggle");
