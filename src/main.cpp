@@ -19,7 +19,7 @@ bool enableRightClick = false;
 
 // LED configuration
 #define USE_LED true  // Set to false if your board doesn't have an LED or you don't want to use it
-#define LED_PIN 2     // Change this to match your board's LED pin, if different, usually 2 I think?
+#define LED_PIN 2     // Change this to match your board's LED pin, if different
 
 BleMouse bleMouse(DEVICE_NAME);
 
@@ -32,6 +32,7 @@ unsigned long lastDebounceTime = 0;
 bool wasConnected = false;
 bool lastButtonState = HIGH;
 bool buttonState;
+bool featuresActive = true;
 
 // Function prototypes
 void moveMouse();
@@ -73,20 +74,22 @@ void loop() {
     }
     lastConnectedTime = millis();
 
-    unsigned long currentTime = millis();
+    if (featuresActive) {
+      unsigned long currentTime = millis();
 
-    // Check if it's time to move the mouse
-    if (enableMouseMovement && currentTime - lastMoveTime >= moveInterval) {
-      moveMouse();
-      lastMoveTime = currentTime;
-      moveInterval = random(MIN_MOVE_INTERVAL, MAX_MOVE_INTERVAL);
-    }
+      // Check if it's time to move the mouse
+      if (enableMouseMovement && currentTime - lastMoveTime >= moveInterval) {
+        moveMouse();
+        lastMoveTime = currentTime;
+        moveInterval = random(MIN_MOVE_INTERVAL, MAX_MOVE_INTERVAL);
+      }
 
-    // Check if it's time to right-click
-    if (enableRightClick && currentTime - lastClickTime >= clickInterval) {
-      rightClick();
-      lastClickTime = currentTime;
-      clickInterval = random(MIN_CLICK_INTERVAL, MAX_CLICK_INTERVAL);
+      // Check if it's time to right-click
+      if (enableRightClick && currentTime - lastClickTime >= clickInterval) {
+        rightClick();
+        lastClickTime = currentTime;
+        clickInterval = random(MIN_CLICK_INTERVAL, MAX_CLICK_INTERVAL);
+      }
     }
   } else {
     checkConnectionAndReset();
@@ -134,12 +137,10 @@ void checkButton() {
       buttonState = reading;
       if (buttonState == LOW) {
         // Toggle features on/off
-        bool newState = !(enableMouseMovement || enableRightClick);
-        enableMouseMovement = newState;
-        enableRightClick = newState;
+        featuresActive = !featuresActive;
         updateLED();
         printConfig();
-        if (newState && bleMouse.isConnected()) {
+        if (featuresActive && bleMouse.isConnected()) {
           wiggleMouse(); // Wiggle mouse when features are enabled
         }
       }
@@ -151,18 +152,20 @@ void checkButton() {
 
 void updateLED() {
   if (USE_LED) {
-    digitalWrite(LED_PIN, (enableMouseMovement || enableRightClick) ? HIGH : LOW);
+    digitalWrite(LED_PIN, featuresActive ? HIGH : LOW);
   }
 }
 
 void printConfig() {
   Serial.println("Configuration:");
+  Serial.print("Features: ");
+  Serial.println(featuresActive ? "Active" : "Inactive");
   Serial.print("Mouse Movement: ");
-  Serial.println(enableMouseMovement ? "Enabled" : "Disabled");
+  Serial.println(featuresActive && enableMouseMovement ? "Enabled" : "Disabled");
   Serial.print("Right Click: ");
-  Serial.println(enableRightClick ? "Enabled" : "Disabled");
+  Serial.println(featuresActive && enableRightClick ? "Enabled" : "Disabled");
   Serial.print("LED State: ");
-  Serial.println((enableMouseMovement || enableRightClick) ? "ON" : "OFF");
+  Serial.println(featuresActive ? "ON" : "OFF");
 }
 
 void wiggleMouse() {
